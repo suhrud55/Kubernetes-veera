@@ -1,106 +1,104 @@
+Cluster Autoscaler Setup on Amazon EKS
 
----
-# **EKS Cluster Autoscaler – Overview and Implementation Guide**
----
+This guide walks you through installing and configuring the Cluster Autoscaler on an EKS cluster using the AWS cloud provider.
 
-## **What is EKS Cluster Autoscaler?**  
-EKS Cluster Autoscaler is a Kubernetes component that automatically adjusts the number of worker nodes in an **Amazon EKS** cluster based on workload demands. It ensures that sufficient compute resources are available while also optimizing costs by removing unused nodes when they are no longer needed.
+1️⃣ Deploy Cluster Autoscaler
 
-### **Why Use EKS Cluster Autoscaler?**
-- **Scales Up Nodes**: Adds new worker nodes when the cluster runs out of resources.
-- **Scales Down Nodes**: Removes underutilized nodes to save costs.
-- **Improves Performance**: Ensures applications have enough compute capacity.
-- **Optimizes Costs**: Removes idle resources automatically.
+Apply the official Cluster Autoscaler manifest for your Kubernetes version (adjust 1.29.0 if needed):
 
----
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/autoscaler/cluster-autoscaler-1.29.0/cluster-autoscaler/cloudprovider/aws/examples/cluster-autoscaler-autodiscover.yaml
 
-## **Step-by-Step Implementation of EKS Cluster Autoscaler**
+2️⃣ Verify the Pod
 
-### **Step 1: Describe the Node Group in EKS**
-To check the existing node group details, run:
-```sh
-aws eks describe-nodegroup --cluster-name <cluster-name> --nodegroup-name <node-group-name>
-```
-This command provides information about the current node group, including its scaling configuration, IAM roles, and status.
+Check that the autoscaler pod is running in the kube-system namespace:
 
----
-
-### **Step 2: Attach IAM Policy for Cluster Autoscaler**  
-EKS worker nodes need proper IAM permissions to manage Auto Scaling Groups (ASG). Attach the **AmazonEKSClusterAutoscalerPolicy** to the IAM role of your worker nodes.
-
----
-### **Step 3: Install Helm packge on server**  
-#### **Run this commnds for Install the helm:**
-```sh
-wget https://get.helm.sh/helm-v3.6.0-linux-amd64.tar.gz
-
-tar -zxvf helm-v3.6.0-linux-amd64.tar.gz
-
-sudo mv linux-amd64/helm /usr/local/bin/helm
-
-chmod 777 /usr/local/bin/helm  # give permissions
-
-```
-### **Step 4: Autoscalling check and adjustment**  
-
-### -- once open your auto scalling group and chek the max capacity if it is set to 2 please increase into 5 to 10 as per your requirement
-
-### **Step 5: Install Cluster Autoscaler using Helm**  
-Deploy Cluster Autoscaler using Helm, which simplifies the installation process.
-
-#### **Run the following commands:**
-```sh
-helm repo add autoscaler https://kubernetes.github.io/autoscaler
-helm repo update
-helm install cluster-autoscaler autoscaler/cluster-autoscaler \
-  --namespace kube-system \
-  --set autoDiscovery.clusterName=<cluster-name> \
-  --set awsRegion=<region-code> \
-  --set extraArgs.balance-similar-node-groups=true \
-  --set extraArgs.skip-nodes-with-system-pods=false
-```
-
-**Explanation:**
-- **`autoDiscovery.clusterName=<cluster-name>`**: Enables automatic node discovery for the specified EKS cluster.
-- **`awsRegion=<region-code>`**: Set your AWS region, e.g., `ap-south-1` (Mumbai).
-- **`balance-similar-node-groups=true`**: Distributes workloads evenly across node groups.
-- **`skip-nodes-with-system-pods=false`**: Ensures system pods do not block node termination.
+kubectl -n kube-system get pods -l app=cluster-autoscaler
 
 
-#### **Verify Cluster Autoscaler Deployment**
-Check if the Cluster Autoscaler pod is running:
-```sh
-kubectl get pods -n kube-system | grep cluster-autoscaler
-```
+Expected output:
 
----
+NAME                                  READY   STATUS    RESTARTS   AGE
+cluster-autoscaler-6889f6cf54-7pcsh   1/1     Running   0          2m
 
-### **Step 6: Deploy `nginx` Application and Increase Replicas**
-Now, deploy a sample application (`nginx`) and increase the replica count to test autoscaling.
+3️⃣ Edit Deployment (Add Cluster Name)
 
-#### **Scale Up the Application**
-```sh
-kubectl scale deployment nginx --replicas=50
-```
-- This command increases the number of running pods from the default count to **50**.
-- If the current worker nodes **do not have enough resources**, Cluster Autoscaler will scale up and add more nodes.
+Edit the deployment to configure your cluster name:
 
----
+kubectl -n kube-system edit deployment.apps/cluster-autoscaler
 
-### **Step 7: Verify Logs and Autoscaler Behavior**
-Monitor the logs of the deployment and ensure that autoscaling is happening.
 
-#### **Check Application Logs**
-```sh
-kubectl logs -f deployment/nginx
-```
+Inside the manifest, find the container args section and update:
 
-#### **Monitor Cluster Autoscaler Logs**
-```sh
-kubectl logs -f -n kube-system deployment/cluster-autoscaler
-```
-- If scaling is working correctly, you will see messages like **"Expanding node group"** in the logs.
-- If it does not scale up, check for errors in the **Cluster Autoscaler** logs.
+containers:
+  - name: cluster-autoscaler
+    command:
+      - ./cluster-autoscaler
+      - --v=4
+      - --stderrthreshold=info
+      - --cloud-provider=aws
+      - --skip-nodes-with-local-storage=false
+      - --expander=least-waste
+      - --balance-similar-node-groups
+      - --skip-nodes-with-system-pods=false
+      - --nodes=2:6:ng-af5ac006
+      - --cluster-name=naresh   # ✅ Add your cluster name here
 
----
 
+Save & exit.
+
+4️⃣ Configure IAM Permissions
+
+Cluster Autoscaler requires IAM permissions to scale nodes.
+Go to your EKS Node Group IAM Role and attach the following policy:
+
+AmazonEKSClusterAutoscalerPolicy (or Admin for testing)
+
+If you don’t have the policy, create one with the official JSON from AWS docs
+.
+
+5️⃣ Update Node Group Scaling Config
+
+Set your min/max/desired node counts for the autoscaler:
+
+aws eks update-nodegroup-config \
+  --cluster-name naresh \
+  --nodegroup-name ng-af5ac006 \
+  --scaling-config minSize=2,maxSize=6,desiredSize=3
+
+6️⃣ Check Autoscaler Logs
+
+Watch the logs to confirm the autoscaler is working:
+
+kubectl -n kube-system logs -f deployment/cluster-autoscaler
+
+
+Look for lines like:
+
+I0828 17:36:38.403432       1 scale_up.go:422] Pod default/nginx-deployment-12345 is unschedulable ...
+I0828 17:36:38.403451       1 scale_up.go:423] Scale-up triggered ...
+
+✅ Validation
+
+Deploy a test workload with more pods than your current node capacity:
+
+kubectl create deployment nginx --image=nginx --replicas=50
+
+
+Check if new nodes are being added:
+
+kubectl get nodes -w
+
+
+Scale down pods and watch nodes reduce (if below maxSize and above minSize):
+
+kubectl scale deployment nginx --replicas=1
+
+📝 Notes
+
+minSize ensures at least 2 nodes are always running.
+
+maxSize sets the upper scaling limit.
+
+desiredSize is the starting point but will be adjusted dynamically.
+
+Ensure your node group IAM role has autoscaling permissions, otherwise the pod will stay in Pending or fail to scale.

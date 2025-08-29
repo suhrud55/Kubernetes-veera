@@ -13,20 +13,17 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/autoscaler/cluster
 2️⃣ Verify the Pod
 Check that the autoscaler pod is running in the kube-system namespace:
 
-sh
-Copy code
+
 kubectl -n kube-system get pods -l app=cluster-autoscaler
 Expected output:
 
-pgsql
-Copy code
+
 NAME                                  READY   STATUS    RESTARTS   AGE
 cluster-autoscaler-6889f6cf54-7pcsh   1/1     Running   0          2m
 3️⃣ Edit Deployment (Add Cluster Name)
 Edit the deployment to configure your cluster name:
 
-sh
-Copy code
+
 kubectl -n kube-system edit deployment.apps/cluster-autoscaler
 Inside the manifest, find the container args section and update:
 
@@ -55,8 +52,8 @@ Go to your EKS Node Group IAM Role and attach the following policy.
 or create a custom IAM policy with the JSON below.
 
 Example IAM Policy JSON
-json
-Copy code
+
+
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -80,8 +77,6 @@ Attach this to your Node Group Role.
 5️⃣ Update Node Group Scaling Config
 Set your min/max/desired node counts for the autoscaler:
 
-sh
-Copy code
 aws eks update-nodegroup-config \
   --cluster-name naresh \
   --nodegroup-name ng-af5ac006 \
@@ -89,30 +84,25 @@ aws eks update-nodegroup-config \
 6️⃣ Check Autoscaler Logs
 Watch the logs to confirm the autoscaler is working:
 
-sh
-Copy code
+
 kubectl -n kube-system logs -f deployment/cluster-autoscaler
 Look for lines like:
 
-go
-Copy code
+
 I0828 17:36:38.403432       1 scale_up.go:422] Pod default/nginx-deployment-12345 is unschedulable ...
 I0828 17:36:38.403451       1 scale_up.go:423] Scale-up triggered ...
 ✅ Validation
 Deploy a test workload with more pods than your current node capacity:
 
-sh
-Copy code
+
 kubectl create deployment nginx --image=nginx --replicas=50
 Check if new nodes are being added:
 
-sh
-Copy code
+
 kubectl get nodes -w
 Scale down pods and watch nodes reduce (if below maxSize and above minSize):
 
-sh
-Copy code
+
 kubectl scale deployment nginx --replicas=1
 📝 Notes
 minSize ensures at least 2 nodes are always running.

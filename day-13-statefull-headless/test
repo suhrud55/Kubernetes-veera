@@ -17,11 +17,6 @@ kubectl exec -it dns-client -- sh
 
 
 
-nslookup mysqll.default.svc.cluster.local
-nslookup mysql-headless.default.svc.cluster.local
-
-
-
 <pod-name>.<headless-service-name>.<namespace>.svc.cluster.local
 
 nslookup mysql-0.mysql.default.svc.cluster.local

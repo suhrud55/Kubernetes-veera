@@ -6,11 +6,11 @@ spec:
   replicas: 3
   selector:
     matchLabels:
-      app: my-app
+      app: my-app1
   template:
     metadata:
       labels:
-        app: my-app
+        app: my-app1
     spec:
       containers:
       - name: my-container
@@ -23,7 +23,7 @@ kind: Service
 metadata:
   name: my-app-svc
   labels:
-    app: my-app
+    app: my-app1
 spec:
   type: ClusterIP
   ports:
